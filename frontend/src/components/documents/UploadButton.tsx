@@ -1,13 +1,39 @@
-interface UploadButtonProps {
-  onClick?: () => void;
-}
+import { uploadDocument } from "../../services/documentService";
 
-export default function UploadButton({ onClick }: UploadButtonProps) {
+export default function UploadButton() {
+
+  async function handleUpload(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    try {
+
+      await uploadDocument(file);
+
+      alert("Document uploaded!");
+
+    } catch (error) {
+
+      console.error(error);
+
+      alert("Upload failed.");
+
+    }
+
+  }
+
   return (
-    <button
-      onClick={onClick}
+
+    <label
       className="
-        w-full
+        flex
+        cursor-pointer
+        items-center
+        justify-center
         rounded-xl
         bg-blue-600
         px-4
@@ -16,10 +42,20 @@ export default function UploadButton({ onClick }: UploadButtonProps) {
         transition-all
         hover:bg-blue-700
         hover:scale-[1.02]
-        active:scale-95
       "
     >
+
       + Upload PDF
-    </button>
+
+      <input
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={handleUpload}
+      />
+
+    </label>
+
   );
+
 }

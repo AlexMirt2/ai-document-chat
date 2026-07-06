@@ -26,3 +26,12 @@ class DocumentService:
         db.refresh(document)
 
         return document
+    
+    @staticmethod
+    def get_all_documents(db: Session):
+
+        return (
+            db.query(Document)
+            .order_by(Document.upload_date.desc())
+            .all()
+        )

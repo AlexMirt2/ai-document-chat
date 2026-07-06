@@ -5,12 +5,21 @@ from app.routers import health
 from app.routers import documents
 from app.database.database import engine
 from app.database.base import Base
-
 from app.models.document import Document
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

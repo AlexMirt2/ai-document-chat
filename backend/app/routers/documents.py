@@ -48,3 +48,19 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
     "stored_filename": document.stored_filename,
     "message": "Upload successful"
 }
+
+@router.get("")
+async def get_documents(
+    db: Session = Depends(get_db)
+):
+    documents = DocumentService.get_all_documents(db)
+
+    return [
+        {
+            "id": document.id,
+            "filename": document.filename,
+            "stored_filename": document.stored_filename,
+            "upload_date": document.upload_date
+        }
+        for document in documents
+    ]
