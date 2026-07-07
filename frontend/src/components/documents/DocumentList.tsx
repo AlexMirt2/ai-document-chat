@@ -1,9 +1,19 @@
 import DocumentCard from "./DocumentCard";
-import { useDocuments } from "../../hooks/useDocuments";
+import type { Document } from "../../types/Document";
 
-export default function DocumentList() {
-  const { documents, loading } = useDocuments();
+interface DocumentListProps {
+  documents: Document[];
+  loading: boolean;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}
 
+export default function DocumentList({
+  documents,
+  loading,
+  selectedId,
+  onSelect,
+}: DocumentListProps) {
   if (loading) {
     return (
       <p className="mt-6 text-slate-400">
@@ -24,9 +34,12 @@ export default function DocumentList() {
     <div className="mt-6 space-y-3">
       {documents.map((document) => (
         <DocumentCard
-          key={document.id}
-          filename={document.filename}
-        />
+     key={document.id}
+     filename={document.filename}
+     uploadDate={document.upload_date}
+     selected={selectedId === document.id}
+     onClick={() => onSelect(document.id)}
+/>
       ))}
     </div>
   );

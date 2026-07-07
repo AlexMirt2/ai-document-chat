@@ -1,6 +1,8 @@
 from pathlib import Path
 import shutil
-
+from fastapi.responses import FileResponse
+from fastapi import HTTPException
+from app.models.document import Document
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from uuid import uuid4
 
@@ -64,3 +66,24 @@ async def get_documents(
         }
         for document in documents
     ]
+
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_path = Path("uploads") / document.stored_filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(
+        path=file_path,
+        filename=document.filename,
+        media_type=document.content_type,
+    )

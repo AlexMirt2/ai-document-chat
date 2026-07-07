@@ -1,33 +1,33 @@
 import { uploadDocument } from "../../services/documentService";
 
-export default function UploadButton() {
+interface UploadButtonProps {
+  onUploaded: () => void;
+}
 
+export default function UploadButton({
+  onUploaded,
+}: UploadButtonProps) {
   async function handleUpload(
     event: React.ChangeEvent<HTMLInputElement>
-  ) {
-
+) {
     const file = event.target.files?.[0];
 
     if (!file) return;
 
     try {
-
       await uploadDocument(file);
 
-      alert("Document uploaded!");
+      onUploaded();
 
+      alert("Document uploaded successfully!");
     } catch (error) {
-
       console.error(error);
 
       alert("Upload failed.");
-
     }
-
   }
 
   return (
-
     <label
       className="
         flex
@@ -41,10 +41,8 @@ export default function UploadButton() {
         font-semibold
         transition-all
         hover:bg-blue-700
-        hover:scale-[1.02]
       "
     >
-
       + Upload PDF
 
       <input
@@ -53,9 +51,6 @@ export default function UploadButton() {
         className="hidden"
         onChange={handleUpload}
       />
-
     </label>
-
   );
-
 }

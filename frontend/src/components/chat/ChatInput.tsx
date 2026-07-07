@@ -1,28 +1,34 @@
 export default function ChatInput() {
   return (
-    <div
-      className="
-        border-t
-        border-slate-800
-        bg-slate-900
-        p-4
-      "
-    >
-      <input
-        type="text"
-        placeholder="Ask something about your document..."
+    <div className="border-t border-slate-800 p-5">
+
+      <textarea
+        rows={3}
+        placeholder="Ask something..."
         className="
-          w-full
-          rounded-xl
-          border
-          border-slate-700
-          bg-slate-800
-          p-4
-          outline-none
-          transition
-          focus:border-blue-500
+            w-full
+            resize-none
+            rounded-xl
+            bg-slate-800
+            p-3
+            outline-none
         "
       />
+
+      <button
+        className="
+            mt-3
+            w-full
+            rounded-xl
+            bg-blue-600
+            py-3
+            font-semibold
+            hover:bg-blue-700
+        "
+      >
+        Send
+      </button>
+
     </div>
   );
 }

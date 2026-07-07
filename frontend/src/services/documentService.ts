@@ -22,3 +22,7 @@ export async function uploadDocument(file: File) {
 
   return response.data;
 }
+
+export function getDocumentUrl(id: number) {
+  return `http://127.0.0.1:8000/api/documents/${id}/download`;
+}
