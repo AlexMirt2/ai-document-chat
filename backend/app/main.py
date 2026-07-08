@@ -7,6 +7,7 @@ from app.database.database import engine
 from app.database.base import Base
 from app.models.document import Document
 from fastapi.middleware.cors import CORSMiddleware
+from app.routers.chat import router as chat_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -31,3 +32,6 @@ Base.metadata.create_all(bind=engine)
 
 app.include_router(health.router)
 app.include_router(documents.router)
+app.include_router(
+    chat_router
+)

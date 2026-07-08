@@ -1,17 +1,31 @@
-export default function ChatMessages() {
-  return (
-    <div className="flex-1 overflow-auto p-5">
+import ChatMessage from "./ChatMessage";
+import type { ChatMessage as ChatMessageType } from "../../types/chat";
 
-      <div className="rounded-xl bg-slate-800 p-4">
+interface Props {
 
-        👋 Hello!
+    messages: ChatMessageType[];
 
-        <br /><br />
+}
 
-        Upload a PDF and ask me anything about it.
+export default function ChatMessages({
+    messages,
+}: Props) {
 
-      </div>
+    return (
 
-    </div>
-  );
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+
+            {messages.map((message) => (
+
+                <ChatMessage
+                    key={message.id}
+                    message={message}
+                />
+
+            ))}
+
+        </div>
+
+    );
+
 }

@@ -13,3 +13,25 @@ body {
     font-family: Inter, system-ui, sans-serif;
     background: #0f172a;
 }
+
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: #475569;
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: #64748b;
+  }
+}

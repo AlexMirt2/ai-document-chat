@@ -29,7 +29,7 @@ export default function PDFViewer({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center overflow-y-auto bg-slate-800 p-6">
+    <div className="thin-scrollbar flex flex-1 flex-col items-center overflow-y-auto bg-slate-800 p-6">
 
       <Document
       loading={
@@ -50,7 +50,7 @@ export default function PDFViewer({
       >
         <Page
           pageNumber={pageNumber}
-          width={900}
+          width={700}
         />
       </Document>
 

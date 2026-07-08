@@ -14,19 +14,19 @@ export default function MainContent() {
 
     return (
 
-        <main className="flex flex-1">
+        <main className="flex flex-1 overflow-hidden min-h-0">
 
-            <div className="flex flex-1">
+    <div className="flex flex-1 min-h-0">
 
-                <PDFViewer
-                    fileUrl={fileUrl}
-                />
+        <PDFViewer
+            fileUrl={fileUrl}
+        />
 
-            </div>
+    </div>
 
-            <ChatPanel />
+    <ChatPanel />
 
-        </main>
+    </main>
 
     );
 
