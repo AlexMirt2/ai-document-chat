@@ -16,7 +16,7 @@ export default function ChatInput({
   function handleSend() {
     if (!message.trim()) return;
 
-    onSend(message);
+    onSend(message.trim());
 
     setMessage("");
 
@@ -40,7 +40,7 @@ export default function ChatInput({
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask something..."
+        placeholder="Ask something about the selected document..."
         className="
           w-full
           resize-none
@@ -48,7 +48,10 @@ export default function ChatInput({
           bg-slate-800
           p-3
           outline-none
+          disabled:opacity-60
+          disabled:cursor-not-allowed
         "
+        disabled={loading}
       />
 
       <button
@@ -63,9 +66,13 @@ export default function ChatInput({
           font-semibold
           hover:bg-blue-700
           disabled:opacity-50
+          transition-all
+          hover:scale-[1.02]
+          active:scale-95
         "
       >
-        {loading ? "Thinking..." : "Send"}
+        {loading ? "🤖 Thinking..." : "Send"}
+        
       </button>
     </div>
   );

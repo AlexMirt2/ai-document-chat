@@ -1,5 +1,6 @@
-from fastapi import APIRouter
-
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.database.dependencies import get_db
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
@@ -16,14 +17,27 @@ router = APIRouter(
 
 @router.post(
     "",
-    response_model=ChatResponse
+    response_model=ChatResponse,
 )
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+):
 
-    answer = ChatService.ask(
-        request.message
+    result = ChatService.ask(
+        db=db,
+        message=request.message,
+        document_id=request.document_id,
+        history=[
+            {
+                "role": message.role,
+                "content": message.content,
+            }
+            for message in request.history
+        ],
     )
 
     return ChatResponse(
-        response=answer
+        answer=result["answer"],
+        sources=result["sources"],
     )

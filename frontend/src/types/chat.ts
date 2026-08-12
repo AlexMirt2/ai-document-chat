@@ -1,9 +1,14 @@
+export interface ChatSource {
+  page: number;
+  document_id: number;
+}
+
 export interface ChatMessage {
+  id: string;
 
-    id: string;
+  role: "user" | "assistant";
 
-    role: "user" | "assistant";
+  content: string;
 
-    content: string;
-
+  sources?: ChatSource[];
 }

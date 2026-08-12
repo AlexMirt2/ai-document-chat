@@ -1,16 +1,15 @@
 import api from "./api";
 
 export async function askAI(
-    message: string
+  message: string,
+  documentId: number,
+  history: unknown[],
 ) {
+  const response = await api.post("/api/chat", {
+    message,
+    document_id: documentId,
+    history,
+  });
 
-    const response = await api.post(
-        "/api/chat",
-        {
-            message,
-        }
-    );
-
-    return response.data.response;
-
+  return response.data;
 }

@@ -19,8 +19,9 @@ export default function MainContent() {
     <div className="flex flex-1 min-h-0">
 
         <PDFViewer
-            fileUrl={fileUrl}
-        />
+       key={selectedId}
+       fileUrl={fileUrl}
+/>
 
     </div>
 

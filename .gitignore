@@ -1,14 +1,24 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
 
 # Node
 node_modules/
+frontend/node_modules/
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Build
+frontend/dist/
 
 # VS Code
 .vscode/
@@ -19,11 +29,15 @@ node_modules/
 # Logs
 *.log
 
-# Uploads
+# Local uploaded files
 uploads/
+backend/data/
+data/
 
 # Database
 *.db
+*.sqlite
+*.sqlite3
 
 # Vector database
 vector_db/

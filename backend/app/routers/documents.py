@@ -12,22 +12,32 @@ from sqlalchemy.orm import Session
 
 from app.database.dependencies import get_db
 from app.services.document_service import DocumentService
-
+from app.services.ai.document_loader import DocumentLoader
+from app.services.ai.text_splitter import TextSplitter
+from app.services.ai.vector_store import VectorStore
+from app.services.ai.rag_service import RAGService
+from app.services.ai.summary_service import SummaryService
+from fastapi import Response
+from app.core.config import settings
 router = APIRouter(
     prefix="/api/documents",
     tags=["Documents"]
 )
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(settings.upload_dir)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+
     if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=400,
-            detail="Only PDF files are allowed."
+            detail="Only PDF files are allowed.",
         )
 
     unique_name = f"{uuid4()}.pdf"
@@ -38,19 +48,66 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         shutil.copyfileobj(file.file, buffer)
 
     document = DocumentService.create_document(
-    db=db,
-    filename=file.filename,
-    stored_filename=unique_name,
-    content_type=file.content_type
+        db=db,
+        filename=file.filename,
+        stored_filename=unique_name,
+        content_type=file.content_type,
+    )
+
+    print("\n========== DOCUMENT PROCESSING ==========")
+
+    pages = DocumentLoader.load(str(destination))
+
+    print(f"Pages extracted: {len(pages)}")
+
+    chunks = TextSplitter.split(pages)
+
+    print(f"Chunks created: {len(chunks)}")
+
+    VectorStore.add_document(
+        document.id,
+        chunks,
+    )
+
+    summary, keywords = SummaryService.generate(
+    pages
 )
+
+    DocumentService.update_ai_metadata(
+    db=db,
+    document_id=document.id,
+    summary=summary,
+    keywords=keywords,
+)
+
+    print("\n========== AI SUMMARY ==========")
+    print(summary)
+    print("\n========== KEYWORDS ==========")
+    print(keywords)
+    print("===============================\n")
+
+    db = VectorStore.load()
+
+    print("\n========== CHROMA ==========")
+    print(
+    db._collection.count()
+)
+    print("============================\n")
+
+    print("Embeddings stored successfully")
+
+    print("========== PROCESS COMPLETE ==========\n")
 
     return {
     "id": document.id,
     "filename": document.filename,
     "stored_filename": document.stored_filename,
-    "message": "Upload successful"
-}
-
+    "pages": len(pages),
+    "chunks": len(chunks),
+    "summary": summary,
+    "keywords": keywords,
+    "message": "Upload successful",
+     }
 @router.get("")
 async def get_documents(
     db: Session = Depends(get_db)
@@ -67,6 +124,7 @@ async def get_documents(
         for document in documents
     ]
 
+
 @router.get("/{document_id}/download")
 async def download_document(
     document_id: int,
@@ -77,7 +135,7 @@ async def download_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    file_path = Path("uploads") / document.stored_filename
+    file_path = Path(settings.upload_dir) / document.stored_filename
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -87,3 +145,36 @@ async def download_document(
         filename=document.filename,
         media_type=document.content_type,
     )
+
+
+
+@router.get("/test-rag")
+async def test_rag():
+
+    context, sources = RAGService.get_context(
+        "Scrie o întrebare despre documentul încărcat"
+    )
+
+    return {
+        "context": context,
+        "sources": sources,
+    }
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+
+    success = DocumentService.delete_document(
+        db,
+        document_id,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    return Response(status_code=204)
