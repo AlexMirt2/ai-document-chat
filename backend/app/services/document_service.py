@@ -2,8 +2,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.document import Document
-from app.services.ai.vector_store import VectorStore
 
 
 class DocumentService:
@@ -29,45 +29,15 @@ class DocumentService:
         return document
 
     @staticmethod
-    def update_ai_metadata(
+    def get_all_documents(
         db: Session,
-        document_id: int,
-        summary: str,
-        keywords: str,
-    ):
-
-        document = (
-            db.query(Document)
-            .filter(Document.id == document_id)
-            .first()
-        )
-
-        if not document:
-            return
-
-        document.summary = summary
-        document.keywords = keywords
-
-        db.commit()
-
-    @staticmethod
-    def get_document(
-        db: Session,
-        document_id: int,
     ):
 
         return (
             db.query(Document)
-            .filter(Document.id == document_id)
-            .first()
-        )
-
-    @staticmethod
-    def get_all_documents(db: Session):
-
-        return (
-            db.query(Document)
-            .order_by(Document.upload_date.desc())
+            .order_by(
+                Document.upload_date.desc()
+            )
             .all()
         )
 
@@ -79,20 +49,27 @@ class DocumentService:
 
         document = (
             db.query(Document)
-            .filter(Document.id == document_id)
+            .filter(
+                Document.id == document_id
+            )
             .first()
         )
 
         if not document:
             return False
 
-        file_path = (
-            Path("uploads")
+        upload_path = (
+            Path(settings.upload_dir)
             / document.stored_filename
         )
 
-        if file_path.exists():
-            file_path.unlink()
+        if upload_path.exists():
+            upload_path.unlink()
+
+        # IMPORTANT:
+        # VectorStore is loaded only when
+        # deletion actually happens.
+        from app.services.ai.vector_store import VectorStore
 
         VectorStore.delete_document(
             document.id
