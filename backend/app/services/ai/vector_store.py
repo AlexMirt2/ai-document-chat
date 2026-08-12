@@ -13,16 +13,28 @@ class VectorStore:
     PERSIST_DIRECTORY = settings.vector_db_dir
     COLLECTION_NAME = "documents"
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    _embeddings = None
+
+    @classmethod
+    def get_embeddings(cls):
+        if cls._embeddings is None:
+            print("Loading embedding model...")
+
+            cls._embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+
+            print("Embedding model loaded.")
+
+        return cls._embeddings
 
     @classmethod
     def load(cls):
+
         return Chroma(
             collection_name=cls.COLLECTION_NAME,
             persist_directory=cls.PERSIST_DIRECTORY,
-            embedding_function=cls.embeddings,
+            embedding_function=cls.get_embeddings(),
         )
 
     @classmethod
