@@ -4,8 +4,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.database.base import Base
+from app.database.database import engine
 
-print("=== STARTING APPLICATION ===", flush=True)
+from app.models.document import Document
+
+from app.routers import health
+from app.routers import documents
+from app.routers.chat import router as chat_router
+
+
+print(
+    "=== STARTING APPLICATION ===",
+    flush=True,
+)
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -36,10 +49,42 @@ def health_check():
     }
 
 
-print("=== BASIC APPLICATION READY ===", flush=True)
+print(
+    "=== CREATING DATABASE TABLES ===",
+    flush=True,
+)
+
+Base.metadata.create_all(
+    bind=engine
+)
+
+print(
+    "=== DATABASE READY ===",
+    flush=True,
+)
+
+
+app.include_router(
+    health.router
+)
+
+app.include_router(
+    documents.router
+)
+
+app.include_router(
+    chat_router
+)
+
+
+print(
+    "=== APPLICATION READY ===",
+    flush=True,
+)
 
 
 if __name__ == "__main__":
+
     import uvicorn
 
     port = int(
