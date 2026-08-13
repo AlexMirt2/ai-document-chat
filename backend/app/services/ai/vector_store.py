@@ -1,41 +1,69 @@
 import re
-from collections import defaultdict
-from typing import Optional
+import sqlite3
 
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from collections import defaultdict
+from pathlib import Path
+from typing import Optional
 
 from app.core.config import settings
 
 
 class VectorStore:
 
-    PERSIST_DIRECTORY = settings.vector_db_dir
-    COLLECTION_NAME = "documents"
-
-    _embeddings = None
+    DATABASE_PATH = settings.database_path
 
     @classmethod
-    def get_embeddings(cls):
-        if cls._embeddings is None:
-            print("Loading embedding model...")
-
-            cls._embeddings = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
-
-            print("Embedding model loaded.")
-
-        return cls._embeddings
-
-    @classmethod
-    def load(cls):
-
-        return Chroma(
-            collection_name=cls.COLLECTION_NAME,
-            persist_directory=cls.PERSIST_DIRECTORY,
-            embedding_function=cls.get_embeddings(),
+    def _connect(cls):
+        Path(
+            cls.DATABASE_PATH
+        ).parent.mkdir(
+            parents=True,
+            exist_ok=True,
         )
+
+        connection = sqlite3.connect(
+            cls.DATABASE_PATH
+        )
+
+        connection.row_factory = sqlite3.Row
+
+        return connection
+
+    @classmethod
+    def initialize(cls):
+
+        connection = cls._connect()
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL,
+                page INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                text TEXT NOT NULL
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_document_chunks_document
+            ON document_chunks(document_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_document_chunks_page
+            ON document_chunks(document_id, page)
+            """
+        )
+
+        connection.commit()
+        connection.close()
 
     @classmethod
     def add_document(
@@ -43,90 +71,195 @@ class VectorStore:
         document_id: int,
         chunks: list[dict],
     ):
-        db = cls.load()
 
-        # Dacă documentul a fost procesat anterior,
-        # ștergem vectorii vechi înainte de a-i adăuga pe cei noi.
-        old = db.get(
-            where={
-                "document_id": document_id,
-            }
+        cls.initialize()
+
+        connection = cls._connect()
+
+        # Remove previous chunks for this document.
+        connection.execute(
+            """
+            DELETE FROM document_chunks
+            WHERE document_id = ?
+            """,
+            (
+                document_id,
+            ),
         )
 
-        if old["ids"]:
-            db.delete(ids=old["ids"])
-
-        texts = [
-            chunk["text"]
-            for chunk in chunks
-        ]
-
-        metadatas = [
-            {
-                "document_id": document_id,
-                "page": chunk["page"],
-                "chunk_index": chunk["chunk_index"],
-            }
-            for chunk in chunks
-        ]
-
-        ids = [
-            f"{document_id}_{chunk['page']}_{chunk['chunk_index']}"
-            for chunk in chunks
-        ]
-
-        db.add_texts(
-            texts=texts,
-            metadatas=metadatas,
-            ids=ids,
+        connection.executemany(
+            """
+            INSERT INTO document_chunks (
+                document_id,
+                page,
+                chunk_index,
+                text
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (
+                    document_id,
+                    chunk["page"],
+                    chunk["chunk_index"],
+                    chunk["text"],
+                )
+                for chunk in chunks
+            ],
         )
 
-        print("Embeddings stored successfully")
+        connection.commit()
+
+        count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM document_chunks
+            WHERE document_id = ?
+            """,
+            (
+                document_id,
+            ),
+        ).fetchone()[0]
+
+        connection.close()
+
         print(
-            "Collection count:",
-            db._collection.count(),
+            "Chunks stored:",
+            count,
+            flush=True,
         )
+
+    @classmethod
+    def _get_chunks(
+        cls,
+        document_id: int,
+    ):
+
+        cls.initialize()
+
+        connection = cls._connect()
+
+        rows = connection.execute(
+            """
+            SELECT
+                page,
+                chunk_index,
+                text
+            FROM document_chunks
+            WHERE document_id = ?
+            ORDER BY page, chunk_index
+            """,
+            (
+                document_id,
+            ),
+        ).fetchall()
+
+        connection.close()
+
+        return rows
+
+    @staticmethod
+    def _tokenize(text: str):
+
+        return set(
+            re.findall(
+                r"\b[\wÀ-ÿ]{2,}\b",
+                text.lower(),
+            )
+        )
+
+    @classmethod
+    def _score(
+        cls,
+        question: str,
+        text: str,
+    ):
+
+        question_tokens = cls._tokenize(
+            question
+        )
+
+        text_tokens = cls._tokenize(
+            text
+        )
+
+        if not question_tokens or not text_tokens:
+            return 0.0
+
+        common = (
+            question_tokens
+            & text_tokens
+        )
+
+        if not common:
+            return 0.0
+
+        score = (
+            len(common)
+            / len(question_tokens)
+        )
+
+        # Small bonus for exact phrases.
+        question_normalized = (
+            " ".join(
+                question.lower().split()
+            )
+        )
+
+        text_normalized = (
+            " ".join(
+                text.lower().split()
+            )
+        )
+
+        if (
+            question_normalized
+            and question_normalized in text_normalized
+        ):
+            score += 1.0
+
+        return score
 
     @classmethod
     def semantic_search(
         cls,
         question: str,
         document_id: int,
-        k: int = 8,
+        k: int = 6,
     ):
-        db = cls.load()
 
-        results = db.similarity_search_with_score(
-            question,
-            k=k,
-            filter={
-                "document_id": document_id,
-            },
+        rows = cls._get_chunks(
+            document_id
         )
 
-        cleaned = []
-        seen = set()
+        scored = []
 
-        for document, score in results:
+        for row in rows:
 
-            key = (
-                document.metadata["page"],
-                document.metadata["chunk_index"],
+            score = cls._score(
+                question,
+                row["text"],
             )
 
-            if key in seen:
-                continue
+            if score > 0:
 
-            seen.add(key)
-
-            cleaned.append(
-                (
-                    document,
-                    score,
+                scored.append(
+                    (
+                        {
+                            "text": row["text"],
+                            "page": row["page"],
+                            "chunk_index": row["chunk_index"],
+                        },
+                        score,
+                    )
                 )
-            )
 
-        return cleaned
+        scored.sort(
+            key=lambda item: item[1],
+            reverse=True,
+        )
+
+        return scored[:k]
 
     @classmethod
     def page_search(
@@ -134,44 +267,29 @@ class VectorStore:
         document_id: int,
         page: int,
     ):
-        db = cls.load()
 
-        results = db.get(
-            where={
-                "$and": [
-                    {
-                        "document_id": document_id,
-                    },
-                    {
-                        "page": page,
-                    },
-                ]
-            },
-            include=[
-                "documents",
-                "metadatas",
-            ],
+        rows = cls._get_chunks(
+            document_id
         )
 
         chunks = []
 
-        documents = results.get("documents") or []
-        metadatas = results.get("metadatas") or []
+        for row in rows:
 
-        for text, metadata in zip(
-            documents,
-            metadatas,
-        ):
+            if row["page"] != page:
+                continue
+
             chunks.append(
                 {
-                    "text": text,
-                    "page": metadata["page"],
-                    "chunk_index": metadata["chunk_index"],
+                    "text": row["text"],
+                    "page": row["page"],
+                    "chunk_index": row["chunk_index"],
                 }
             )
 
         chunks.sort(
-            key=lambda chunk: chunk["chunk_index"]
+            key=lambda chunk:
+            chunk["chunk_index"]
         )
 
         return chunks
@@ -181,43 +299,34 @@ class VectorStore:
         cls,
         document_id: int,
     ):
-        db = cls.load()
 
-        results = db.get(
-            where={
-                "document_id": document_id,
-            },
-            include=[
-                "documents",
-                "metadatas",
-            ],
+        rows = cls._get_chunks(
+            document_id
         )
 
         pages = defaultdict(list)
 
-        documents = results.get("documents") or []
-        metadatas = results.get("metadatas") or []
+        for row in rows:
 
-        for text, metadata in zip(
-            documents,
-            metadatas,
-        ):
             pages[
-                metadata["page"]
+                row["page"]
             ].append(
                 (
-                    metadata["chunk_index"],
-                    text,
+                    row["chunk_index"],
+                    row["text"],
                 )
             )
 
         ordered_pages = []
 
-        for page in sorted(pages.keys()):
+        for page in sorted(
+            pages.keys()
+        ):
 
             pieces = sorted(
                 pages[page],
-                key=lambda item: item[0],
+                key=lambda item:
+                item[0],
             )
 
             ordered_pages.append(
@@ -232,36 +341,19 @@ class VectorStore:
 
         return ordered_pages
 
-    @classmethod
-    def get_page_count(
-        cls,
-        document_id: int,
-    ) -> int:
-        pages = cls.document_search(
-            document_id
-        )
-
-        if not pages:
-            return 0
-
-        return max(
-            page["page"]
-            for page in pages
-        )
-
     @staticmethod
     def detect_page_request(
         question: str,
     ) -> Optional[int]:
 
-        question = question.lower()
-
         patterns = [
-            r"\bpage\s*[:#]?\s*(\d+)\b",
-            r"\bpagina\s*[:#]?\s*(\d+)\b",
-            r"\bpag\.?\s*[:#]?\s*(\d+)\b",
-            r"\bpg\.?\s*[:#]?\s*(\d+)\b",
+            r"page\s+(\d+)",
+            r"pagina\s+(\d+)",
+            r"pag\s+(\d+)",
+            r"pg\s+(\d+)",
         ]
+
+        question = question.lower()
 
         for pattern in patterns:
 
@@ -284,93 +376,60 @@ class VectorStore:
         document_id: int,
     ):
 
-        requested_page = cls.detect_page_request(
-            question
+        requested_page = (
+            cls.detect_page_request(
+                question
+            )
         )
 
-        # =====================================================
-        # EXACT PAGE MODE
-        # =====================================================
-
+        # Exact page mode.
         if requested_page is not None:
 
             chunks = cls.page_search(
-                document_id=document_id,
-                page=requested_page,
+                document_id,
+                requested_page,
             )
 
-            print(
-                f"\n========== EXACT PAGE SEARCH =========="
-            )
-            print(
-                f"Requested page: {requested_page}"
-            )
-            print(
-                f"Chunks found: {len(chunks)}"
-            )
-
-            # Pagina cerută nu există în vector database.
             if not chunks:
-
-                print(
-                    "Requested page was not found."
-                )
-                print(
-                    "=======================================\n"
-                )
 
                 return (
                     "",
                     [],
                 )
 
-            context_parts = []
-
-            for chunk in chunks:
-                context_parts.append(
-                    chunk["text"]
-                )
-
             context = "\n\n".join(
-                context_parts
-            )
-
-            sources = [
-                {
-                    "page": requested_page,
-                    "document_id": document_id,
-                }
-            ]
-
-            print(
-                "=======================================\n"
+                chunk["text"]
+                for chunk in chunks
             )
 
             return (
-                context.strip(),
-                sources,
+                context,
+                [
+                    {
+                        "page": requested_page,
+                        "document_id": document_id,
+                    }
+                ],
             )
 
-        # =====================================================
-        # NORMAL SEMANTIC RAG MODE
-        # =====================================================
-
+        # Normal relevance search.
         results = cls.semantic_search(
             question,
             document_id,
+            k=6,
         )
 
         context_parts = []
         sources = []
         seen_pages = set()
 
-        for document, score in results:
+        for chunk, score in results:
 
             context_parts.append(
-                document.page_content
+                chunk["text"]
             )
 
-            page = document.metadata["page"]
+            page = chunk["page"]
 
             if page not in seen_pages:
 
@@ -383,12 +442,10 @@ class VectorStore:
                     }
                 )
 
-        context = "\n\n".join(
-            context_parts
-        )
-
         return (
-            context.strip(),
+            "\n\n".join(
+                context_parts
+            ).strip(),
             sources,
         )
 
@@ -396,17 +453,26 @@ class VectorStore:
     def delete_document(
         document_id: int,
     ):
-        db = VectorStore.load()
 
-        results = db.get(
-            where={
-                "document_id": document_id,
-            }
+        connection = (
+            VectorStore._connect()
         )
 
-        ids = results["ids"]
+        connection.execute(
+            """
+            DELETE FROM document_chunks
+            WHERE document_id = ?
+            """,
+            (
+                document_id,
+            ),
+        )
 
-        if ids:
-            db.delete(
-                ids=ids
-            )
+        connection.commit()
+        connection.close()
+
+        print(
+            "Deleted chunks for document:",
+            document_id,
+            flush=True,
+        )

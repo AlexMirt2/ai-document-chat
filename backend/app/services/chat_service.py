@@ -10,95 +10,75 @@ client = OpenAI(
 )
 
 
-SYSTEM_PROMPT = """
-You are a helpful AI assistant.
-
-The user has uploaded one PDF document.
-
-Your goal is to answer naturally.
-
-Rules:
-
-1. Always use the provided document context whenever it contains relevant information.
-
-2. If the document answers the question, base your answer on it.
-
-3. If the document only partially answers the question, complete the answer using your own knowledge and explicitly mention which part comes from your own knowledge.
-
-4. If the document contains no relevant information, answer using your own knowledge and clearly state that the answer was not found in the uploaded document.
-
-5. Never invent information that supposedly exists inside the document.
-
-6. If the user asks about a specific page, only answer using that page.
-
-7. Continue the conversation naturally.
-
-Do not say that you cannot access the document if document excerpts are provided.
-"""
-
-
 class ChatService:
+
+    MAX_HISTORY_MESSAGES = 12
 
     @staticmethod
     def ask(
-    db,
-    message: str,
-    document_id: int,
-    history: list,
+        message: str,
+        document_id: int,
+        history: list,
     ):
 
-        context, sources = RAGService.get_context(
-            message,
-            document_id,
+        context, sources = (
+            RAGService.get_context(
+                message,
+                document_id,
+            )
         )
-        from app.services.document_service import DocumentService
 
-        document = DocumentService.get_document(
-         db,
-         document_id,
-        )
         messages = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": """
+You are a helpful AI assistant.
+
+The user has uploaded a PDF document.
+
+Relevant excerpts from the document may be
+provided below.
+
+Instructions:
+
+- Answer naturally and conversationally.
+- Prefer information from the uploaded document
+  when it is relevant.
+- If the document does not contain the answer,
+  you may use your general knowledge.
+- Never claim that information came from the
+  document if it was not present there.
+- If the user asks about a specific page,
+  use only the provided context for that page.
+- Do not invent page numbers or document content.
+- Continue the conversation naturally.
+""",
             }
         ]
 
-        if (
-         document
-         and document.summary
-        ):
-         messages.append(
-        {
-            "role": "system",
-            "content": f"""
-        Document summary:
-
-        {document.summary}
-
-         Keywords:
-
-         {document.keywords}
-"""
-        }
-    )
-  
         if context.strip():
 
             messages.append(
                 {
                     "role": "system",
                     "content": f"""
-Document context:
+Relevant document context:
 
 {context}
 """,
                 }
             )
 
-        if history:
+        # Keep only recent conversation history.
+        recent_history = (
+            history[
+                -ChatService.MAX_HISTORY_MESSAGES:
+            ]
+        )
 
-            messages.extend(history[-12:])
+        messages.extend(
+            recent_history
+        )
 
         messages.append(
             {
@@ -107,15 +87,18 @@ Document context:
             }
         )
 
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            temperature=0.2,
-            messages=messages,
+        response = (
+            client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                temperature=0.3,
+                messages=messages,
+            )
         )
 
-        answer = response.choices[0].message.content
-
         return {
-            "answer": answer,
+            "answer": (
+                response.choices[0]
+                .message.content
+            ),
             "sources": sources,
         }

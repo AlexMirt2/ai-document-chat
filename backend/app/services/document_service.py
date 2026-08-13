@@ -66,9 +66,7 @@ class DocumentService:
         if upload_path.exists():
             upload_path.unlink()
 
-        # IMPORTANT:
-        # VectorStore is loaded only when
-        # deletion actually happens.
+        # Load vector storage only when needed.
         from app.services.ai.vector_store import VectorStore
 
         VectorStore.delete_document(
