@@ -1,31 +1,36 @@
 from pathlib import Path
 import shutil
-from fastapi.responses import FileResponse
-from fastapi import HTTPException
-from app.models.document import Document
-from fastapi import APIRouter, File, HTTPException, UploadFile
 from uuid import uuid4
 
-from fastapi import Depends
-
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    Response,
+)
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.database.dependencies import get_db
-from app.services.document_service import DocumentService
-from app.services.ai.document_loader import DocumentLoader
-from app.services.ai.text_splitter import TextSplitter
-from app.services.ai.vector_store import VectorStore
-from app.services.ai.rag_service import RAGService
-from app.services.ai.summary_service import SummaryService
-from fastapi import Response
 from app.core.config import settings
+from app.database.dependencies import get_db
+from app.models.document import Document
+from app.services.document_service import DocumentService
+
+
 router = APIRouter(
     prefix="/api/documents",
-    tags=["Documents"]
+    tags=["Documents"],
 )
 
+
 UPLOAD_DIR = Path(settings.upload_dir)
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 
 @router.post("/upload")
@@ -42,84 +47,123 @@ async def upload_document(
 
     unique_name = f"{uuid4()}.pdf"
 
-    destination = UPLOAD_DIR / unique_name
-
-    with destination.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    document = DocumentService.create_document(
-        db=db,
-        filename=file.filename,
-        stored_filename=unique_name,
-        content_type=file.content_type,
+    destination = (
+        UPLOAD_DIR / unique_name
     )
 
-    print("\n========== DOCUMENT PROCESSING ==========")
+    try:
 
-    pages = DocumentLoader.load(str(destination))
+        with destination.open("wb") as buffer:
+            shutil.copyfileobj(
+                file.file,
+                buffer,
+            )
 
-    print(f"Pages extracted: {len(pages)}")
+        document = (
+            DocumentService.create_document(
+                db=db,
+                filename=file.filename,
+                stored_filename=unique_name,
+                content_type=file.content_type,
+            )
+        )
 
-    chunks = TextSplitter.split(pages)
+        print(
+            "\n========== DOCUMENT PROCESSING ==========",
+            flush=True,
+        )
 
-    print(f"Chunks created: {len(chunks)}")
+        # Import heavy/processing services only
+        # when an actual PDF is uploaded.
+        from app.services.ai.document_loader import (
+            DocumentLoader,
+        )
 
-    VectorStore.add_document(
-        document.id,
-        chunks,
-    )
+        from app.services.ai.text_splitter import (
+            TextSplitter,
+        )
 
-    summary, keywords = SummaryService.generate(
-    pages
-)
+        from app.services.ai.vector_store import (
+            VectorStore,
+        )
 
-    DocumentService.update_ai_metadata(
-    db=db,
-    document_id=document.id,
-    summary=summary,
-    keywords=keywords,
-)
+        pages = DocumentLoader.load(
+            str(destination)
+        )
 
-    print("\n========== AI SUMMARY ==========")
-    print(summary)
-    print("\n========== KEYWORDS ==========")
-    print(keywords)
-    print("===============================\n")
+        print(
+            f"Pages extracted: {len(pages)}",
+            flush=True,
+        )
 
-    db = VectorStore.load()
+        chunks = TextSplitter.split(
+            pages
+        )
 
-    print("\n========== CHROMA ==========")
-    print(
-    db._collection.count()
-)
-    print("============================\n")
+        print(
+            f"Chunks created: {len(chunks)}",
+            flush=True,
+        )
 
-    print("Embeddings stored successfully")
+        VectorStore.add_document(
+            document.id,
+            chunks,
+        )
 
-    print("========== PROCESS COMPLETE ==========\n")
+        print(
+            "Embeddings/vector processing complete",
+            flush=True,
+        )
 
-    return {
-    "id": document.id,
-    "filename": document.filename,
-    "stored_filename": document.stored_filename,
-    "pages": len(pages),
-    "chunks": len(chunks),
-    "summary": summary,
-    "keywords": keywords,
-    "message": "Upload successful",
-     }
+        print(
+            "========== PROCESS COMPLETE ==========\n",
+            flush=True,
+        )
+
+        return {
+            "id": document.id,
+            "filename": document.filename,
+            "stored_filename": document.stored_filename,
+            "pages": len(pages),
+            "chunks": len(chunks),
+            "message": "Upload successful",
+        }
+
+    except Exception as exc:
+
+        print(
+            "UPLOAD ERROR:",
+            repr(exc),
+            flush=True,
+        )
+
+        # Remove uploaded PDF if processing failed.
+        if destination.exists():
+            destination.unlink()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process PDF.",
+        )
+
+
 @router.get("")
 async def get_documents(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    documents = DocumentService.get_all_documents(db)
+
+    documents = (
+        DocumentService.get_all_documents(
+            db
+        )
+    )
 
     return [
         {
             "id": document.id,
             "filename": document.filename,
             "stored_filename": document.stored_filename,
-            "upload_date": document.upload_date
+            "upload_date": document.upload_date,
         }
         for document in documents
     ]
@@ -130,15 +174,31 @@ async def download_document(
     document_id: int,
     db: Session = Depends(get_db),
 ):
-    document = db.query(Document).filter(Document.id == document_id).first()
+
+    document = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id
+        )
+        .first()
+    )
 
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
 
-    file_path = Path(settings.upload_dir) / document.stored_filename
+    file_path = (
+        Path(settings.upload_dir)
+        / document.stored_filename
+    )
 
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(
+            status_code=404,
+            detail="File not found",
+        )
 
     return FileResponse(
         path=file_path,
@@ -147,28 +207,17 @@ async def download_document(
     )
 
 
-
-@router.get("/test-rag")
-async def test_rag():
-
-    context, sources = RAGService.get_context(
-        "Scrie o întrebare despre documentul încărcat"
-    )
-
-    return {
-        "context": context,
-        "sources": sources,
-    }
-
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
 ):
 
-    success = DocumentService.delete_document(
-        db,
-        document_id,
+    success = (
+        DocumentService.delete_document(
+            db,
+            document_id,
+        )
     )
 
     if not success:
@@ -177,4 +226,6 @@ async def delete_document(
             detail="Document not found",
         )
 
-    return Response(status_code=204)
+    return Response(
+        status_code=204
+    )
