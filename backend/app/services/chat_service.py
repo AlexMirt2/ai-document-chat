@@ -21,17 +21,39 @@ class ChatService:
         history: list,
     ):
 
-        context, sources = (
-            RAGService.get_context(
-                message,
-                document_id,
+        try:
+            context, sources = (
+                RAGService.get_context(
+                    message,
+                    document_id,
+                )
             )
-        )
 
-        messages = [
-            {
-                "role": "system",
-                "content": """
+            print(
+                "===== CHAT REQUEST =====",
+                flush=True,
+            )
+
+            print(
+                f"Document ID: {document_id}",
+                flush=True,
+            )
+
+            print(
+                f"Context length: {len(context)}",
+                flush=True,
+            )
+
+            recent_history = (
+                history[
+                    -ChatService.MAX_HISTORY_MESSAGES:
+                ]
+            )
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": """
 You are a helpful AI assistant.
 
 The user has uploaded a PDF document.
@@ -45,60 +67,89 @@ Instructions:
 - Prefer information from the uploaded document
   when it is relevant.
 - If the document does not contain the answer,
-  you may use your general knowledge.
-- Never claim that information came from the
-  document if it was not present there.
+  say that the information was not found in the
+  provided document.
+- Never invent facts from the document.
 - If the user asks about a specific page,
   use only the provided context for that page.
-- Do not invent page numbers or document content.
-- Continue the conversation naturally.
+- Never invent page numbers.
 """,
-            }
-        ]
+                }
+            ]
 
-        if context.strip():
+            if context.strip():
 
-            messages.append(
-                {
-                    "role": "system",
-                    "content": f"""
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"""
 Relevant document context:
 
 {context}
 """,
+                    }
+                )
+
+            messages.extend(
+                recent_history
+            )
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": message,
                 }
             )
 
-        # Keep only recent conversation history.
-        recent_history = (
-            history[
-                -ChatService.MAX_HISTORY_MESSAGES:
-            ]
-        )
-
-        messages.extend(
-            recent_history
-        )
-
-        messages.append(
-            {
-                "role": "user",
-                "content": message,
-            }
-        )
-
-        response = (
-            client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                temperature=0.3,
-                messages=messages,
+            print(
+                f"Messages sent to Groq: {len(messages)}",
+                flush=True,
             )
-        )
 
-        return {
-            "answer": (
+            response = (
+                client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.3,
+                    messages=messages,
+                )
+            )
+
+            answer = (
                 response.choices[0]
-                .message.content
-            ),
-            "sources": sources,
-        }
+                .message
+                .content
+            )
+
+            print(
+                "Groq response received successfully.",
+                flush=True,
+            )
+
+            return {
+                "answer": answer,
+                "sources": sources,
+            }
+
+        except Exception as exc:
+
+            print(
+                "========== CHAT ERROR ==========",
+                flush=True,
+            )
+
+            print(
+                type(exc).__name__,
+                flush=True,
+            )
+
+            print(
+                str(exc),
+                flush=True,
+            )
+
+            print(
+                "================================",
+                flush=True,
+            )
+
+            raise
